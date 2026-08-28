@@ -1,0 +1,9 @@
+langgraph==0.2.*
+langchain-core==0.3.*
+pandas
+numpy
+httpx
+sqlalchemy[asyncio]
+asyncpg
+pydantic==2.*
+python-dotenv

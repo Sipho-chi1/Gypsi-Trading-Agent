@@ -1,0 +1,8 @@
+# Railway service config — backend API
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "backend/Dockerfile"
+
+[deploy]
+startCommand = "uvicorn app.main:app --host 0.0.0.0 --port 8000"
+restartPolicyType = "ON_FAILURE"

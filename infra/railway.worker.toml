@@ -1,0 +1,8 @@
+# Railway service config — always-on trading loop
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "worker/Dockerfile"
+
+[deploy]
+startCommand = "python run_loop.py"
+restartPolicyType = "ALWAYS"

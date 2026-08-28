@@ -1,0 +1,7 @@
+# Railway service config — Alpaca MCP sidecar (private network only)
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "mcp/Dockerfile"
+
+[deploy]
+restartPolicyType = "ALWAYS"
