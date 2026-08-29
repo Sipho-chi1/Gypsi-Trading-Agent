@@ -1,3 +1,4 @@
+// @ts-expect-error - CSS imports are valid in Next.js app-router projects but may not be typed in this setup.
 import "./globals.css";
 
 export const metadata = {

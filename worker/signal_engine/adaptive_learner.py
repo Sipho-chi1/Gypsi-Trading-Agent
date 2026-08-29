@@ -13,6 +13,14 @@ TODO (Gypsi extension, see docs/ARCHITECTURE.md):
       * bias_flag_predictiveness — per flag type, does it actually
         predict a loss? This is what lets adapt_config() tune the
         Round Table's own thresholds, not just SMC parameters.
+  - NEW SMC/KILLZONE INSIGHT CATEGORIES UNLOCKED (Flagged for implementation):
+      * session_win_rates: Track separate performance for London, NY_AM,
+        London_Close, Asian, and Silver Bullet sub-windows.
+      * breaker_vs_ob_performance: Compare edge of Breaker Blocks vs standard OBs.
+      * ifvg_vs_fvg_performance: Compare Inversion FVGs vs standard 3-candle FVGs.
+      * amd_phase_accuracy: Evaluate win rate when entries align with the daily
+        Distribution phase vs entering during Asian Accumulation or Manipulation.
+      * killzone_overlap_edge: Quantify extra expectancy during London/NY overlap.
 
 adaptive_learner.py — Adaptive learning system for the SMC Forex Bot.
 
