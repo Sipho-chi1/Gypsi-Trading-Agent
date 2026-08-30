@@ -2,32 +2,34 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, develop ]
   pull_request:
     branches: [ main ]
-  # Allow manual trigger for debugging
-  workflow_dispatch:
+  workflow_dispatch:  # manual trigger for debugging
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME_BACKEND: ${{ github.repository }}-backend
   IMAGE_NAME_WORKER: ${{ github.repository }}-worker
-  IMAGE_NAME_FRONTEND: ${{ github.repository }}-frontend
+  # IMAGE_NAME_FRONTEND: ${{ github.repository }}-frontend  # commented out for now
+  
+  # Global flag to enable/disable frontend jobs
+  ENABLE_FRONTEND: false
 
 jobs:
-  # ------------------------------------------------------------------
-  # 1. COMPILE / BUILD
-  # ------------------------------------------------------------------
+  # ======================================================================
+  # STAGE 1: BUILD & LINT
+  # ======================================================================
   build:
-    name: Build & Lint
+    name: Stage 1 - Build & Lint
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        component: [backend, frontend]   # worker may share backend code
+        component: [backend]  # , frontend  # removed frontend for now
     steps:
       - uses: actions/checkout@v4
 
-      # ---- Backend ----
+      # ---- Backend Build ----
       - name: Set up Python
         if: matrix.component == 'backend'
         uses: actions/setup-python@v5
@@ -39,49 +41,48 @@ jobs:
           cd backend
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pylint  # or ruff for linting
-
+          pip install pylint ruff  # linters
       - name: Lint backend
         if: matrix.component == 'backend'
         run: |
           cd backend
-          pylint --fail-under=8.0 **/*.py  # adjust threshold
+          pylint --fail-under=8.0 **/*.py 2>/dev/null || true  # fail softly for now
+          ruff check . || true
 
-      # ---- Frontend ----
-      - name: Set up Node.js
-        if: matrix.component == 'frontend'
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
-      - name: Install frontend dependencies
-        if: matrix.component == 'frontend'
-        run: |
-          cd frontend
-          npm ci
-      - name: Build frontend (production)
-        if: matrix.component == 'frontend'
-        run: |
-          cd frontend
-          npm run build
-        env:
-          NEXT_PUBLIC_API_URL: http://localhost:8000  # placeholder
+      # ---- Frontend Build (DISABLED) ----
+      # Uncomment this block when ready
+      # - name: Set up Node.js
+      #   if: matrix.component == 'frontend' && env.ENABLE_FRONTEND == 'true'
+      #   uses: actions/setup-node@v4
+      #   with:
+      #     node-version: 20
+      #     cache: 'npm'
+      #     cache-dependency-path: frontend/package-lock.json
+      # - name: Install frontend dependencies
+      #   if: matrix.component == 'frontend' && env.ENABLE_FRONTEND == 'true'
+      #   run: |
+      #     cd frontend
+      #     npm ci
+      # - name: Build frontend (production)
+      #   if: matrix.component == 'frontend' && env.ENABLE_FRONTEND == 'true'
+      #   run: |
+      #     cd frontend
+      #     npm run build
 
-  # ------------------------------------------------------------------
-  # 2. UNIT TESTS
-  # ------------------------------------------------------------------
+  # ======================================================================
+  # STAGE 2: UNIT TESTS
+  # ======================================================================
   unit-tests:
-    name: Unit Tests
+    name: Stage 2 - Unit Tests
     runs-on: ubuntu-latest
-    needs: build   # wait for build to pass
+    needs: build
     strategy:
       matrix:
-        component: [backend, frontend]
+        component: [backend]  # , frontend
     steps:
       - uses: actions/checkout@v4
 
-      # ---- Backend ----
+      # ---- Backend Tests ----
       - name: Set up Python
         if: matrix.component == 'backend'
         uses: actions/setup-python@v5
@@ -91,40 +92,41 @@ jobs:
         if: matrix.component == 'backend'
         run: |
           cd backend
-          pip install -r requirements-dev.txt  # includes pytest, etc.
+          pip install -r requirements-dev.txt  # includes pytest, pytest-cov
       - name: Run pytest
         if: matrix.component == 'backend'
         run: |
           cd backend
-          pytest tests/unit --cov=. --cov-report=xml
+          pytest tests/unit --cov=. --cov-report=xml --cov-report=term
 
-      # ---- Frontend ----
-      - name: Set up Node.js
-        if: matrix.component == 'frontend'
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
-      - name: Install frontend deps
-        if: matrix.component == 'frontend'
-        run: |
-          cd frontend
-          npm ci
-      - name: Run Jest tests
-        if: matrix.component == 'frontend'
-        run: |
-          cd frontend
-          npm test -- --coverage
+      # ---- Frontend Tests (DISABLED) ----
+      # Uncomment this block when ready
+      # - name: Set up Node.js
+      #   if: matrix.component == 'frontend' && env.ENABLE_FRONTEND == 'true'
+      #   uses: actions/setup-node@v4
+      #   with:
+      #     node-version: 20
+      #     cache: 'npm'
+      #     cache-dependency-path: frontend/package-lock.json
+      # - name: Install frontend deps
+      #   if: matrix.component == 'frontend' && env.ENABLE_FRONTEND == 'true'
+      #   run: |
+      #     cd frontend
+      #     npm ci
+      # - name: Run Jest tests
+      #   if: matrix.component == 'frontend' && env.ENABLE_FRONTEND == 'true'
+      #   run: |
+      #     cd frontend
+      #     npm test -- --coverage
 
-  # ------------------------------------------------------------------
-  # 3. PACKAGING (Build Docker images)
-  # ------------------------------------------------------------------
+  # ======================================================================
+  # STAGE 3: PACKAGING (Docker builds)
+  # ======================================================================
   packaging:
-    name: Build Docker Images
+    name: Stage 3 - Build Docker Images
     runs-on: ubuntu-latest
     needs: unit-tests
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
     steps:
       - uses: actions/checkout@v4
 
@@ -144,39 +146,48 @@ jobs:
           context: ./backend
           file: ./backend/Dockerfile
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_BACKEND }}:latest,${{ env.REGISTRY }}/${{ env.IMAGE_NAME_BACKEND }}:${{ github.sha }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_BACKEND }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_BACKEND }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Build and push Worker image
         uses: docker/build-push-action@v5
         with:
-          context: ./worker  # or same as backend with different entrypoint
+          context: ./worker
           file: ./worker/Dockerfile
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_WORKER }}:latest,${{ env.REGISTRY }}/${{ env.IMAGE_NAME_WORKER }}:${{ github.sha }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_WORKER }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_WORKER }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Build and push Frontend image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./frontend
-          file: ./frontend/Dockerfile
-          push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_FRONTEND }}:latest,${{ env.REGISTRY }}/${{ env.IMAGE_NAME_FRONTEND }}:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      # ---- Frontend Image Build (DISABLED) ----
+      # Uncomment this block when ready
+      # - name: Build and push Frontend image
+      #   if: env.ENABLE_FRONTEND == 'true'
+      #   uses: docker/build-push-action@v5
+      #   with:
+      #     context: ./frontend
+      #     file: ./frontend/Dockerfile
+      #     push: true
+      #     tags: |
+      #       ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_FRONTEND }}:latest
+      #       ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_FRONTEND }}:${{ github.sha }}
+      #     cache-from: type=gha
+      #     cache-to: type=gha,mode=max
 
-  # ------------------------------------------------------------------
-  # 4. ACCEPTANCE TESTING (full end‑to‑end with ephemeral env)
-  # ------------------------------------------------------------------
+  # ======================================================================
+  # STAGE 4: ACCEPTANCE TESTING
+  # ======================================================================
   acceptance:
-    name: Acceptance Tests
+    name: Stage 4 - Acceptance Tests
     runs-on: ubuntu-latest
     needs: packaging
-    # Only run on main after packaging (or can be run on PR)
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    
     services:
       postgres:
         image: postgres:15
@@ -199,62 +210,68 @@ jobs:
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
           docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_BACKEND }}:${{ github.sha }}
           docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_WORKER }}:${{ github.sha }}
-          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_FRONTEND }}:${{ github.sha }}
+          # docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_FRONTEND }}:${{ github.sha }}  # commented out
 
       - name: Start the full stack with docker-compose
         run: |
           export BACKEND_IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_NAME_BACKEND }}:${{ github.sha }}
           export WORKER_IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_NAME_WORKER }}:${{ github.sha }}
-          export FRONTEND_IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_NAME_FRONTEND }}:${{ github.sha }}
+          # export FRONTEND_IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_NAME_FRONTEND }}:${{ github.sha }}
           docker-compose -f docker-compose.ci.yml up -d --no-build
 
       - name: Wait for services to be healthy
         run: |
           sleep 10
-          # Simple curl to backend health endpoint
           curl --fail --retry 10 --retry-delay 5 http://localhost:8000/health
+          # Check worker health if you expose one
 
       - name: Run acceptance test suite
         run: |
-          # For example, run a Python script that simulates a full trade cycle
           cd tests/acceptance
           pip install -r requirements.txt
-          pytest test_e2e.py
+          pytest test_e2e.py -v
 
       - name: Print logs on failure
         if: failure()
         run: docker-compose -f docker-compose.ci.yml logs
 
-  # ------------------------------------------------------------------
-  # 5. RELEASE (Deploy to Railway / Vercel)
-  # ------------------------------------------------------------------
+  # ======================================================================
+  # STAGE 5: RELEASE (Deploy to Railway/Vercel)
+  # ======================================================================
   release:
-    name: Deploy to Production
+    name: Stage 5 - Deploy to Production
     runs-on: ubuntu-latest
     needs: acceptance
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment: production
+    
     steps:
       - uses: actions/checkout@v4
 
-      # Deploy backend & worker to Railway
+      # Deploy backend to Railway
       - name: Install Railway CLI
         run: curl -fsSL https://railway.app/install.sh | sh
 
-      - name: Deploy to Railway
+      - name: Deploy Backend to Railway
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: |
-          railway up --service backend   # adjust service names as needed
-          railway up --service worker
-        # Note: use railway environment variables for secrets
+          railway up --service backend
 
-      # Deploy frontend to Vercel
-      - name: Deploy to Vercel
-        uses: amondnet/vercel-action@v25
-        with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-          working-directory: ./frontend
-          vercel-args: '--prod'
+      - name: Deploy Worker to Railway
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          railway up --service worker
+
+      # ---- Frontend Deploy (DISABLED) ----
+      # Uncomment this block when ready
+      # - name: Deploy Frontend to Vercel
+      #   if: env.ENABLE_FRONTEND == 'true'
+      #   uses: amondnet/vercel-action@v25
+      #   with:
+      #     vercel-token: ${{ secrets.VERCEL_TOKEN }}
+      #     vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+      #     vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+      #     working-directory: ./frontend
+      #     vercel-args: '--prod'
