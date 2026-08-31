@@ -14,7 +14,7 @@ import logging
 from typing import Any, Optional, TypedDict, Union
 
 try:
-    from langgraph.graph import StateGraph, START, END
+    from langgraph.graph import StateGraph, START, END  # type: ignore[import-not-found]
     _LANGGRAPH_AVAILABLE = True
 except ImportError:
     _LANGGRAPH_AVAILABLE = False

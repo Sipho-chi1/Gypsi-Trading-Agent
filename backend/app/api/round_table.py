@@ -1,5 +1,5 @@
 """Live/recent Round Table deliberations, for the dashboard's deliberation view."""
-from fastapi import APIRouter
+from fastapi import APIRouter  # type: ignore
 
 from app.schemas.trade import RoundTableEntryOut
 
