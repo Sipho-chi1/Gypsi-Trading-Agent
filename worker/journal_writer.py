@@ -26,7 +26,7 @@ async def log_trade(instrument, signal, verdict, contract, position) -> None:
             {
                 "symbol": instrument.symbol,
                 "direction": signal.bias,
-                "entry": signal.entry,
+                "entry": signal.entry_price,
                 "stop_loss": signal.stop_loss,
                 "take_profit": signal.take_profit,
                 "reasoning": signal.reason,

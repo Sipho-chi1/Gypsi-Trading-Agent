@@ -24,8 +24,7 @@ class OpenPosition:
 def place_order(instrument, signal, contract, verdict) -> OpenPosition:
     sizing = position_size(
         account_balance=100_000.0,  # TODO: pull live equity
-        entry=signal.entry,
-        stop_loss=signal.stop_loss,
+        entry=signal.entry_price,
         instrument=instrument,
         is_options=True,
         contract_premium=contract.premium_estimate,

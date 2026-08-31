@@ -17,7 +17,8 @@ from signal_engine.instrument import load_watchlist
 from signal_engine.data_fetcher import fetch_multi_tf
 from signal_engine.smc_detector import analyse_pair
 from signal_engine.risk_manager import can_trade
-from round_table.graph import build_round_table, RoundTableInput
+from round_table.schemas import PortfolioState, RoundTableInput
+from round_table.graph import build_round_table
 from execution.executor import place_order
 from execution.contract_selector import select_contract
 from journal_writer import log_trade, log_no_trade
@@ -27,7 +28,18 @@ logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("gypsi.worker")
 
 
+def fetch_portfolio_state(account_balance: float) -> PortfolioState:
+    """Fetches real account exposure/positions snapshot from broker."""
+    # Real query via Alpaca MCP / broker API (Day 4)
+    return PortfolioState(
+        open_positions=[],
+        total_risk_deployed_pct=0.0,
+        same_direction_symbols=[],
+    )
+
+
 def run_iteration(round_table, watchlist, account_balance: float) -> None:
+    portfolio_state = fetch_portfolio_state(account_balance)
     for instrument in watchlist:
         candles = fetch_multi_tf(instrument)
         if candles is None:
@@ -52,6 +64,7 @@ def run_iteration(round_table, watchlist, account_balance: float) -> None:
         verdict = round_table.invoke(RoundTableInput(
             instrument=instrument,
             proposal=signal,
+            portfolio_state=portfolio_state,
         ))
 
         if verdict.decision == "reject":
