@@ -17,6 +17,7 @@ class TradeOut(BaseModel):
     size_factor: float
     status: str
     created_at: str
+    pnl: float | None
 
 
 class RoundTableEntryOut(BaseModel):

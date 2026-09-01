@@ -4,3 +4,4 @@ sqlalchemy[asyncio]==2.*
 asyncpg
 pydantic==2.*
 python-dotenv
+
