@@ -7,3 +7,5 @@ sqlalchemy[asyncio]
 asyncpg
 pydantic==2.*
 python-dotenv
+pytest
+fastapi
