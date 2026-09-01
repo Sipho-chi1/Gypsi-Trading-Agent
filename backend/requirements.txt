@@ -5,4 +5,4 @@ asyncpg
 pydantic==2.*
 python-dotenv
 pytest
-
+pytest-cov
