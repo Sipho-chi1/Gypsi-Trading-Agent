@@ -5,9 +5,12 @@ branching style of the original forex_bot/executor.py's place_order(), but
 routes through the Alpaca CLI instead of MT5 or an MCP sidecar.
 """
 from dataclasses import dataclass
+import logging
 
-from execution.alpaca_cli_client import submit_option_order
+from execution.alpaca_cli_client import get_account, submit_option_order, AlpacaCLIError
 from signal_engine.risk_manager import position_size
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -19,14 +22,25 @@ class OpenPosition:
     status: str = "open"
 
 
-def place_order(instrument, signal, contract, verdict) -> OpenPosition:
+def get_live_account_balance(fallback: float = 100_000.0) -> float:
+    """Pulls live account equity via alpaca_cli_client.get_account() with fallback."""
+    try:
+        acc = get_account()
+        if isinstance(acc, dict) and "equity" in acc:
+            return float(acc["equity"])
+    except (AlpacaCLIError, KeyError, ValueError, Exception) as e:
+        logger.debug("Using fallback balance for position sizing: %s", e)
+    return fallback
+
+
+def place_order(instrument, signal, contract, verdict, account_balance: float | None = None) -> OpenPosition:
+    if account_balance is None:
+        account_balance = get_live_account_balance()
+
     sizing = position_size(
-        account_balance=100_000.0,  # TODO: pull live equity via alpaca_cli_client.get_account()
+        account_balance=account_balance,
         entry=signal.entry_price,
-        stop_loss=signal.stop_loss,   # was missing entirely — position_size() requires
-                                        # this positionally between entry and instrument;
-                                        # the previous version would have raised a TypeError
-                                        # the first time this function actually ran.
+        stop_loss=signal.stop_loss,
         instrument=instrument,
         is_options=True,
         contract_premium=contract.premium_estimate,

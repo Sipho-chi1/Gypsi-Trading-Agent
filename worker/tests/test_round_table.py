@@ -36,7 +36,7 @@ from round_table.schemas import (
     RoundTableInput,
     RoundTableVerdict,
 )
-from round_table.market_context import Catalyst, build_market_context
+from round_table.market_context import Catalyst, build_market_context, set_catalysts_fetcher
 from round_table.independent_market_agent import (
     analyse_independently,
     build_system_prompt,
@@ -103,6 +103,11 @@ class TestMarketContextAndEventRisk(unittest.TestCase):
 
     def setUp(self):
         set_risk_gate_llm(None)
+        # Isolate from live Alpaca API: no catalysts expected in unit tests
+        set_catalysts_fetcher(lambda _inst: [])
+
+    def tearDown(self):
+        set_catalysts_fetcher(None)
 
     def test_empty_catalysts_produces_no_event_risk_flag(self):
         instrument = get_instrument("SPY")

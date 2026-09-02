@@ -4,10 +4,8 @@
 # flags/commands can change without notice between releases — do not swap
 # this to @latest mid-build-week.
 FROM golang:1.23-bookworm AS alpaca-cli
-# TODO: pin to a specific tagged version once confirmed against the repo's
-# releases (https://github.com/alpacahq/cli/releases) instead of @latest —
-# @latest here is a placeholder for local dev only.
-RUN go install github.com/alpacahq/cli/cmd/alpaca@latest
+# Pinned to specific tagged release for build reproducibility
+RUN go install github.com/alpacahq/cli/cmd/alpaca@v0.1.0
 
 FROM python:3.12-slim
 WORKDIR /app

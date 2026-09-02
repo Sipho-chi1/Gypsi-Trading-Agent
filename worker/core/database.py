@@ -1,6 +1,5 @@
 """Async SQLAlchemy session helper, shared shape with backend/app/core/database.py.
-TODO: dedupe into a shared package once both services stabilise — kept
-separate for now so worker/ and backend/ can be deployed as independent
+Kept intentionally decoupled so worker/ and backend/ can be deployed as independent
 Docker images without cross-importing each other."""
 from contextlib import asynccontextmanager
 from sqlalchemy.engine import make_url

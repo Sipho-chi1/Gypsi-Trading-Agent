@@ -32,18 +32,20 @@ Independent Market Agent's context, even by mistake in a later refactor.
 | Ported (mostly unchanged) | New for Gypsi |
 |---|---|
 | `smc_detector.py` pattern math | `instrument.py` |
-| `adaptive_learner.py` core loop | Round-table-aware insight categories (TODO) |
+| `adaptive_learner.py` core loop | Round-table-aware insight categories & trigger fix |
 | — | `round_table/` package |
 | — | `execution/` package |
 | — | Postgres-backed `journal_writer.py` (was local JSON) |
 | — | Alpaca-backed `data_fetcher.py` (was Twelve Data) |
 | — | Dollar-based `risk_manager.py` (was pip/lot-based) |
 
-## Known gaps to close first (see TODOs in each file)
+## Pipeline Status & Implemented Integrations
 
-1. `data_fetcher.py` — no real Alpaca Market Data client wired up yet.
-2. `independent_market_agent.py` / `risk_gate_agent.py` — LLM calls not wired up.
-3. `contract_selector.py` — no real options chain lookup yet.
-4. `mcp/Dockerfile` — placeholder; needs the real Alpaca MCP server install.
-5. `adaptive_learner.py` — round_table_accuracy / bias_flag_predictiveness
-   insight categories not yet added; modulo-trigger bug not yet fixed.
+1. `data_fetcher.py` — Multi-timeframe bar retrieval and session/killzone tagging.
+2. `independent_market_agent.py` / `risk_gate_agent.py` — Multi-model LLM calls wired with deterministic risk gating.
+3. `contract_selector.py` — Options contract strike/expiry selection and defined-risk structure sizing.
+4. `mcp/` & `execution/mcp_client.py` — Alpaca MCP sidecar server & JSON-RPC client.
+5. `adaptive_learner.py` — 14 insight categories (including Round Table accuracy and bias-flag predictiveness) + modulo adaptation trigger fixed.
+6. `market_context.py` — Real live catalyst and news query via Alpaca API.
+7. `executor.py` — Dynamic equity retrieval via Alpaca CLI.
+8. `backend/app/main.py` — Configurable CORS environment settings.

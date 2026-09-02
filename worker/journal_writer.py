@@ -11,7 +11,7 @@ from core.database import get_session
 
 
 async def log_trade(instrument, signal, verdict, contract, position) -> None:
-
+    independent_reasoning = None
     if getattr(verdict, "independent_read", None) is not None:
         independent_reasoning = getattr(verdict.independent_read, "reasoning", None)
 

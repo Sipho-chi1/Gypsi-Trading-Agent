@@ -22,6 +22,7 @@ class Settings:
     OPENROUTER_API_KEY: str = os.getenv("OPENROUTER_API_KEY", "")
 
     DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://gypsi:gypsi@localhost:5432/gypsi")
+    ALPACA_MCP_URL: str = os.getenv("ALPACA_MCP_URL", "http://localhost:8080")
 
     POLL_INTERVAL_SECONDS: int = int(os.getenv("POLL_INTERVAL_SECONDS", "300"))
     WATCHLIST: list[str] = field(default_factory=lambda: _split_csv(os.getenv("WATCHLIST", "SPY,QQQ")))
