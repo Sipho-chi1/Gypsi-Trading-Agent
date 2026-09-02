@@ -1,26 +1,45 @@
 """
 PORTED FROM: forex_bot/adaptive_learner.py — reused as-is, extension pending.
 
-TODO (Gypsi extension, see docs/ARCHITECTURE.md):
-  - Fix the `len(history) % 20 == 0` trigger in record_and_adapt() — it can
-    skip the check entirely when multiple trades close in one iteration.
-    Track the count at last adaptation and use a `>=` threshold instead.
-  - Extend LearnedTrade with Round Table context: verdict, bias_flags,
+GYPSI EXTENSION — IMPLEMENTED (see docs/ARCHITECTURE.md):
+  - Fixed the len(history) % 20 == 0 trigger bug in record_and_adapt(). It now
+    tracks the trade count at the last adaptation (persisted in the overlay's
+    own "_total_trades_analysed" metadata) and uses a `>=` threshold, so a
+    batch of closed trades landing exactly on a multiple of 20 can no longer
+    silently skip a whole adaptation cycle.
+  - LearnedTrade extended with Round Table context: verdict, bias_flags,
     market_agent_agreed, gate_size_factor.
-  - Add two new insight categories in analyse_mistakes():
-      * round_table_accuracy — do downsized/partial-consensus trades
-        actually underperform full-consensus trades?
-      * bias_flag_predictiveness — per flag type, does it actually
-        predict a loss? This is what lets adapt_config() tune the
-        Round Table's own thresholds, not just SMC parameters.
-  - NEW SMC/KILLZONE INSIGHT CATEGORIES UNLOCKED (Flagged for implementation):
-      * session_win_rates: Track separate performance for London, NY_AM,
-        London_Close, Asian, and Silver Bullet sub-windows.
-      * breaker_vs_ob_performance: Compare edge of Breaker Blocks vs standard OBs.
-      * ifvg_vs_fvg_performance: Compare Inversion FVGs vs standard 3-candle FVGs.
-      * amd_phase_accuracy: Evaluate win rate when entries align with the daily
-        Distribution phase vs entering during Asian Accumulation or Manipulation.
-      * killzone_overlap_edge: Quantify extra expectancy during London/NY overlap.
+  - LearnedTrade extended with SMC/killzone context: killzone,
+    killzone_overlap, is_breaker_block, is_ifvg, amd_phase.
+  - New insight categories in analyse_mistakes():
+      8.  round_table_accuracy      — do downsized trades actually underperform
+                                        full-consensus approvals? Does independent-
+                                        agent disagreement predict a loss?
+      9.  bias_flag_predictiveness  — per flag type, does it actually predict
+                                        a loss, or is it firing on noise?
+      10. session_win_rates         — separate performance per killzone
+                                        (London, NY_AM, London_Close, Asian,
+                                        Silver_Bullet).
+      11. breaker_vs_ob_performance — breaker blocks vs standard order blocks.
+      12. ifvg_vs_fvg_performance   — inversion FVGs vs standard 3-candle FVGs.
+      13. amd_phase_accuracy        — Distribution-phase entries vs
+                                        Accumulation/Manipulation-phase entries.
+      14. killzone_overlap_edge     — quantified extra expectancy during the
+                                        London/NY overlap window.
+
+  IMPORTANT SCOPING NOTE: apply_adaptive_config() only patches the SMC
+  detector's `config` module (thresholds like MIN_CONFLUENCE_SCORE,
+  AVOID_KILLZONES, etc.) — that's the module this file was always meant to
+  patch. The new BIAS_FLAG_* and ROUND_TABLE_* keys produced by insights
+  8-9 are NOT patched anywhere automatically, on purpose: they don't belong
+  to the SMC config module, they belong to the Round Table's own Risk-Gate
+  Agent config. Round Table code should read them directly via
+  get_adaptive_config() rather than this file reaching into a module it has
+  no business patching. Per the earlier design conversation, this is also
+  deliberately NOT wired to auto-apply during live trading this week —
+  human review of the report before manually adjusting the Risk-Gate
+  Agent's thresholds is the intended flow for now, not silent self-tuning
+  on a thin week of live samples.
 
 adaptive_learner.py — Adaptive learning system for the SMC Forex Bot.
 
@@ -35,6 +54,8 @@ How it works:
        - Kill zone vs non-kill-zone performance
        - OB vs FVG entry type performance
        - Consecutive loss streaks
+       - Round Table verdict accuracy & bias-flag predictiveness (NEW)
+       - Session/killzone, breaker/IFVG, and AMD-phase performance (NEW)
   3. `adapt_config()` writes recommended parameter changes back to a
      `learning_data/adapted_config.json` overlay file.  `get_adaptive_config()`
      merges the overlay on top of the live config so the bot always uses the
@@ -96,6 +117,23 @@ class LearnedTrade:
     setup_type:       str           # "OB" | "FVG" | "OB+FVG"
     session_date:     str           # YYYY-MM-DD
     session_id:       str           # unique per backtest/paper run
+
+    # --- Round Table context (Gypsi extension) ---
+    verdict:              str = ""              # "approve" | "downsize" | "reject"
+    bias_flags:            list[str] = field(default_factory=list)
+    market_agent_agreed:    Optional[bool] = None  # did the Independent Market
+                                                    # Agent's direction match the
+                                                    # Signal Agent's proposal?
+    gate_size_factor:        float = 1.0
+
+    # --- SMC/killzone context (Gypsi extension) ---
+    killzone:                str = ""             # "London" | "NY_AM" | "London_Close"
+                                                    # | "Asian" | "Silver_Bullet" | ""
+    killzone_overlap:         bool = False          # London/NY overlap window
+    is_breaker_block:          bool = False
+    is_ifvg:                    bool = False
+    amd_phase:                    str = ""           # "Accumulation" | "Manipulation"
+                                                       # | "Distribution" | ""
 
 
 # ---------------------------------------------------------------------------
@@ -209,6 +247,19 @@ def record_session(trades: list, pair: str, session_id: Optional[str] = None) ->
             setup_type       = setup_type,
             session_date     = today_str,
             session_id       = session_id,
+
+            # --- Round Table context ---
+            verdict              = str(d.get("verdict", "")),
+            bias_flags            = list(d.get("bias_flags", []) or []),
+            market_agent_agreed    = d.get("market_agent_agreed", None),
+            gate_size_factor         = float(d.get("gate_size_factor", 1.0) or 1.0),
+
+            # --- SMC/killzone context ---
+            killzone                  = str(d.get("killzone", "")),
+            killzone_overlap           = bool(d.get("killzone_overlap", False)),
+            is_breaker_block             = bool(d.get("is_breaker_block", False)),
+            is_ifvg                        = bool(d.get("is_ifvg", False)),
+            amd_phase                        = str(d.get("amd_phase", "")),
         )
         new_records.append(asdict(rec))
 
@@ -510,6 +561,253 @@ def analyse_mistakes(min_total: int = MIN_TRADES_TO_LEARN) -> list[LearningInsig
             param_changes = {"MAX_CONSECUTIVE_LOSS": max(2, max_streak - 2)},
         ))
 
+    # ── 8. Round Table verdict accuracy ─────────────────────────────────────
+    verdict_buckets: dict[str, list[dict]] = defaultdict(list)
+    for t in history:
+        v = t.get("verdict", "")
+        if v:
+            verdict_buckets[v].append(t)
+
+    approve_bucket  = verdict_buckets.get("approve", [])
+    downsize_bucket = verdict_buckets.get("downsize", [])
+
+    if len(approve_bucket) >= MIN_TRADES_PER_BUCKET and len(downsize_bucket) >= MIN_TRADES_PER_BUCKET:
+        approve_wr  = _win_rate(approve_bucket)
+        downsize_wr = _win_rate(downsize_bucket)
+        downsize_pf = _profit_factor(downsize_bucket)
+
+        if downsize_wr < approve_wr - 10:
+            insights.append(LearningInsight(
+                category      = "round_table_accuracy",
+                description   = (f"Downsized trades: {downsize_wr:.1f}% WR vs full-consensus "
+                                  f"approvals: {approve_wr:.1f}% WR — the gate is correctly "
+                                  f"identifying riskier setups"),
+                sample_size   = len(downsize_bucket),
+                win_rate      = downsize_wr,
+                profit_factor = downsize_pf,
+                severity      = "info",
+                recommendation= "Round Table calibration looks sound — downsized trades genuinely underperform",
+                param_changes = {"ROUND_TABLE_VALIDATED": True},
+            ))
+        elif downsize_wr >= approve_wr - 3:
+            # Downsized trades performing about as well as full-consensus ones —
+            # the gate may be flagging bias too aggressively on setups that are
+            # actually fine, needlessly cutting position size for no real benefit.
+            insights.append(LearningInsight(
+                category      = "round_table_accuracy",
+                description   = (f"Downsized trades: {downsize_wr:.1f}% WR is close to full-consensus "
+                                  f"approvals: {approve_wr:.1f}% WR — the gate may be over-flagging"),
+                sample_size   = len(downsize_bucket),
+                win_rate      = downsize_wr,
+                profit_factor = downsize_pf,
+                severity      = "warning",
+                recommendation= "Consider loosening the Risk-Gate Agent's flag thresholds — downsizing may not be earning its keep here",
+                param_changes = {"ROUND_TABLE_OVERCAUTIOUS": True},
+            ))
+
+    # Independent Market Agent agreement check
+    agreed    = [t for t in history if t.get("market_agent_agreed") is True]
+    disagreed = [t for t in history if t.get("market_agent_agreed") is False]
+
+    if len(agreed) >= MIN_TRADES_PER_BUCKET and len(disagreed) >= MIN_TRADES_PER_BUCKET:
+        agreed_wr    = _win_rate(agreed)
+        disagreed_wr = _win_rate(disagreed)
+
+        if disagreed_wr < agreed_wr - 15:
+            insights.append(LearningInsight(
+                category      = "round_table_accuracy",
+                description   = (f"Trades where the Independent Market Agent disagreed: "
+                                  f"{disagreed_wr:.1f}% WR vs agreed: {agreed_wr:.1f}% WR"),
+                sample_size   = len(disagreed),
+                win_rate      = disagreed_wr,
+                profit_factor = _profit_factor(disagreed),
+                severity      = "critical",
+                recommendation= "Any trade where the independent read disagrees on direction should very likely be a hard reject, not just a downsize",
+                param_changes = {"REJECT_ON_DIRECTIONAL_DISAGREEMENT": True},
+            ))
+
+    # ── 9. Bias flag predictiveness ─────────────────────────────────────────
+    all_flags: set[str] = set()
+    for t in history:
+        all_flags.update(t.get("bias_flags", []) or [])
+
+    for flag in sorted(all_flags):
+        flagged = [t for t in history if flag in (t.get("bias_flags") or [])]
+        if len(flagged) < MIN_TRADES_PER_BUCKET:
+            continue
+
+        flagged_wr = _win_rate(flagged)
+        flagged_pf = _profit_factor(flagged)
+
+        if flagged_wr < overall_wr - 12:
+            insights.append(LearningInsight(
+                category      = "bias_flag_predictiveness",
+                description   = (f"'{flag}' flag: {flagged_wr:.1f}% WR across {len(flagged)} trades "
+                                  f"vs {overall_wr:.1f}% overall — this flag is genuinely predictive of loss"),
+                sample_size   = len(flagged),
+                win_rate      = flagged_wr,
+                profit_factor = flagged_pf,
+                severity      = "warning" if flagged_wr < overall_wr - 20 else "info",
+                recommendation= f"Increase the size-factor penalty for '{flag}', or make it reject-worthy on its own",
+                param_changes = {f"BIAS_FLAG_PREDICTIVE__{flag}": True,
+                                  f"BIAS_FLAG_PENALTY__{flag}": 0.5},
+            ))
+        elif abs(flagged_wr - overall_wr) < 5 and flagged_pf >= 0.9:
+            insights.append(LearningInsight(
+                category      = "bias_flag_predictiveness",
+                description   = (f"'{flag}' flag: {flagged_wr:.1f}% WR across {len(flagged)} trades "
+                                  f"is barely different from {overall_wr:.1f}% overall — not clearly predictive"),
+                sample_size   = len(flagged),
+                win_rate      = flagged_wr,
+                profit_factor = flagged_pf,
+                severity      = "info",
+                recommendation= f"Consider loosening how aggressively '{flag}' fires, or lowering its size-factor penalty",
+                param_changes = {f"BIAS_FLAG_PREDICTIVE__{flag}": False,
+                                  f"BIAS_FLAG_PENALTY__{flag}": 0.85},
+            ))
+
+    # ── 10. Killzone/session win rates ──────────────────────────────────────
+    session_buckets: dict[str, list[dict]] = defaultdict(list)
+    for t in history:
+        session_buckets[t.get("killzone") or "None"].append(t)
+
+    for session_name, bucket in sorted(session_buckets.items()):
+        if len(bucket) < MIN_TRADES_PER_BUCKET:
+            continue
+        s_wr = _win_rate(bucket)
+        s_pf = _profit_factor(bucket)
+
+        if s_wr < overall_wr - 15 and s_pf < 1.0:
+            insights.append(LearningInsight(
+                category      = "session_win_rates",
+                description   = f"{session_name} session: {s_wr:.1f}% WR, PF={s_pf} ({len(bucket)} trades)",
+                sample_size   = len(bucket),
+                win_rate      = s_wr,
+                profit_factor = s_pf,
+                severity      = "warning",
+                recommendation= f"Consider excluding the {session_name} session from entries",
+                param_changes = {"AVOID_KILLZONES": [session_name]},
+            ))
+        elif s_wr > overall_wr + 12 and s_pf > 1.8:
+            insights.append(LearningInsight(
+                category      = "session_win_rates",
+                description   = f"{session_name} session outperforming: {s_wr:.1f}% WR, PF={s_pf}",
+                sample_size   = len(bucket),
+                win_rate      = s_wr,
+                profit_factor = s_pf,
+                severity      = "info",
+                recommendation= f"Prioritise/weight entries during the {session_name} session",
+                param_changes = {"PREFERRED_KILLZONES": [session_name]},
+            ))
+
+    # ── 11. Breaker block vs standard order block performance ──────────────
+    breaker_trades     = [t for t in history if t.get("is_breaker_block")]
+    standard_ob_trades = [t for t in history if "OB" in t.get("setup_type", "") and not t.get("is_breaker_block")]
+
+    if len(breaker_trades) >= MIN_TRADES_PER_BUCKET and len(standard_ob_trades) >= MIN_TRADES_PER_BUCKET:
+        breaker_wr  = _win_rate(breaker_trades)
+        standard_wr = _win_rate(standard_ob_trades)
+        breaker_pf  = _profit_factor(breaker_trades)
+
+        if breaker_wr > standard_wr + 12:
+            insights.append(LearningInsight(
+                category      = "breaker_vs_ob_performance",
+                description   = f"Breaker blocks: {breaker_wr:.1f}% WR vs standard OBs: {standard_wr:.1f}% WR",
+                sample_size   = len(breaker_trades),
+                win_rate      = breaker_wr,
+                profit_factor = breaker_pf,
+                severity      = "info",
+                recommendation= "Breaker blocks carry a real edge here — weight them above standard order blocks in confluence scoring",
+                param_changes = {"BREAKER_BLOCK_SCORE_BONUS": 1},
+            ))
+        elif standard_wr > breaker_wr + 12:
+            insights.append(LearningInsight(
+                category      = "breaker_vs_ob_performance",
+                description   = f"Standard OBs outperforming breaker blocks: {standard_wr:.1f}% vs {breaker_wr:.1f}%",
+                sample_size   = len(breaker_trades),
+                win_rate      = breaker_wr,
+                profit_factor = breaker_pf,
+                severity      = "warning",
+                recommendation= "Breaker blocks aren't earning their extra confluence weight here — consider lowering trust in them",
+                param_changes = {"BREAKER_BLOCK_SCORE_BONUS": 0},
+            ))
+
+    # ── 12. Inversion FVG vs standard FVG performance ───────────────────────
+    ifvg_trades         = [t for t in history if t.get("is_ifvg")]
+    standard_fvg_trades = [t for t in history if t.get("setup_type") == "FVG" and not t.get("is_ifvg")]
+
+    if len(ifvg_trades) >= MIN_TRADES_PER_BUCKET and len(standard_fvg_trades) >= MIN_TRADES_PER_BUCKET:
+        ifvg_wr    = _win_rate(ifvg_trades)
+        std_fvg_wr = _win_rate(standard_fvg_trades)
+
+        if ifvg_wr > std_fvg_wr + 12:
+            insights.append(LearningInsight(
+                category      = "ifvg_vs_fvg_performance",
+                description   = f"Inversion FVGs: {ifvg_wr:.1f}% WR vs standard FVGs: {std_fvg_wr:.1f}% WR",
+                sample_size   = len(ifvg_trades),
+                win_rate      = ifvg_wr,
+                profit_factor = _profit_factor(ifvg_trades),
+                severity      = "info",
+                recommendation= "Inversion FVGs are outperforming here — prioritise IFVG entries over standard FVGs",
+                param_changes = {"PREFER_IFVG": True},
+            ))
+        elif std_fvg_wr > ifvg_wr + 12:
+            insights.append(LearningInsight(
+                category      = "ifvg_vs_fvg_performance",
+                description   = f"Standard FVGs outperforming inversion FVGs: {std_fvg_wr:.1f}% vs {ifvg_wr:.1f}%",
+                sample_size   = len(ifvg_trades),
+                win_rate      = ifvg_wr,
+                profit_factor = _profit_factor(ifvg_trades),
+                severity      = "warning",
+                recommendation= "Inversion FVG entries aren't earning their keep here — require additional confluence before taking them",
+                param_changes = {"PREFER_IFVG": False},
+            ))
+
+    # ── 13. AMD phase accuracy ───────────────────────────────────────────────
+    distribution_trades     = [t for t in history if t.get("amd_phase") == "Distribution"]
+    non_distribution_trades = [t for t in history if t.get("amd_phase") in ("Accumulation", "Manipulation")]
+
+    if len(distribution_trades) >= MIN_TRADES_PER_BUCKET and len(non_distribution_trades) >= MIN_TRADES_PER_BUCKET:
+        dist_wr     = _win_rate(distribution_trades)
+        non_dist_wr = _win_rate(non_distribution_trades)
+        dist_pf     = _profit_factor(distribution_trades)
+
+        if dist_wr > non_dist_wr + 12:
+            insights.append(LearningInsight(
+                category      = "amd_phase_accuracy",
+                description   = (f"Distribution-phase entries: {dist_wr:.1f}% WR vs Accumulation/"
+                                  f"Manipulation-phase entries: {non_dist_wr:.1f}% WR"),
+                sample_size   = len(distribution_trades),
+                win_rate      = dist_wr,
+                profit_factor = dist_pf,
+                severity      = "warning" if non_dist_wr < 35 else "info",
+                recommendation= "Require AMD Distribution-phase alignment before entering — Accumulation/Manipulation-phase entries are underperforming here",
+                param_changes = {"REQUIRE_AMD_DISTRIBUTION": True},
+            ))
+
+    # ── 14. Killzone overlap edge ────────────────────────────────────────────
+    overlap_trades     = [t for t in history if t.get("killzone_overlap")]
+    non_overlap_trades = [t for t in history if not t.get("killzone_overlap") and t.get("in_kill_zone")]
+
+    if len(overlap_trades) >= MIN_TRADES_PER_BUCKET and len(non_overlap_trades) >= MIN_TRADES_PER_BUCKET:
+        overlap_wr     = _win_rate(overlap_trades)
+        non_overlap_wr = _win_rate(non_overlap_trades)
+        overlap_pf     = _profit_factor(overlap_trades)
+
+        if overlap_wr > non_overlap_wr + 10:
+            insights.append(LearningInsight(
+                category      = "killzone_overlap_edge",
+                description   = (f"London/NY overlap: {overlap_wr:.1f}% WR vs other single-session "
+                                  f"kill-zone trades: {non_overlap_wr:.1f}% WR — "
+                                  f"+{overlap_wr - non_overlap_wr:.1f}pt edge"),
+                sample_size   = len(overlap_trades),
+                win_rate      = overlap_wr,
+                profit_factor = overlap_pf,
+                severity      = "info",
+                recommendation= "The London/NY overlap window carries a real, quantified edge here — weight it above single-session kill zones",
+                param_changes = {"KILLZONE_OVERLAP_SCORE_BONUS": 1},
+            ))
+
     # Sort: critical first, then warning, then info
     severity_order = {"critical": 0, "warning": 1, "info": 2}
     insights.sort(key=lambda x: severity_order.get(x.severity, 3))
@@ -546,7 +844,8 @@ def adapt_config(insights: Optional[list[LearningInsight]] = None) -> dict:
                 key_severity[key] = sev
 
     # Special merge for list-type keys (accumulate rather than overwrite)
-    list_keys = {"BAD_HOURS_UTC", "PREFERRED_HOURS_UTC", "PAIRS_TO_AVOID", "PREFERRED_PAIRS"}
+    list_keys = {"BAD_HOURS_UTC", "PREFERRED_HOURS_UTC", "PAIRS_TO_AVOID", "PREFERRED_PAIRS",
+                 "AVOID_KILLZONES", "PREFERRED_KILLZONES"}
     for key in list_keys:
         all_vals: list = []
         for insight in insights:
@@ -557,7 +856,8 @@ def adapt_config(insights: Optional[list[LearningInsight]] = None) -> dict:
         if all_vals:
             overlay[key] = all_vals
 
-    # Add metadata
+    # Add metadata — "_total_trades_analysed" also doubles as the persisted
+    # counter record_and_adapt() reads to fix the modulo-skip bug below.
     overlay["_generated_at"] = datetime.now(timezone.utc).isoformat()
     overlay["_total_trades_analysed"] = len(_load_history())
     overlay["_insights_count"] = len(insights)
@@ -576,6 +876,10 @@ def get_adaptive_config() -> dict:
         from adaptive_learner import get_adaptive_config
         ADAPTIVE = get_adaptive_config()
         MIN_CONFLUENCE_SCORE = ADAPTIVE.get("MIN_CONFLUENCE_SCORE", MIN_CONFLUENCE_SCORE)
+
+    Round Table code should read BIAS_FLAG_* / ROUND_TABLE_* keys from here
+    directly — see the module docstring's scoping note for why those are
+    NOT patched automatically by apply_adaptive_config() below.
     """
     return _load_adapted()
 
@@ -584,6 +888,10 @@ def apply_adaptive_config() -> dict:
     """
     Load the adapted config and patch the live `config` module in-place.
     Call once at bot startup (after import config).
+
+    Only patches SMC-detector-level thresholds that actually live in the
+    `config` module. Round Table / bias-flag keys are deliberately excluded
+    — see the module docstring's scoping note.
 
     Returns the dict of changes applied.
     """
@@ -599,6 +907,9 @@ def apply_adaptive_config() -> dict:
         "MIN_CONFLUENCE_SCORE", "MAX_SL_PIPS", "MIN_RR",
         "FVG_MIN_SIZE_PIPS", "OB_IMPULSE_FACTOR", "MAX_CONSECUTIVE_LOSS",
         "MIN_DAILY_ATR", "MIN_ADX_H1", "MAX_SPREAD_MAJORS",
+        # Gypsi extension — SMC/session-level thresholds, same tier as the above
+        "AVOID_KILLZONES", "PREFERRED_KILLZONES", "REQUIRE_AMD_DISTRIBUTION",
+        "BREAKER_BLOCK_SCORE_BONUS", "PREFER_IFVG", "KILLZONE_OVERLAP_SCORE_BONUS",
     }
     for key in safe_keys:
         if key in overlay and hasattr(cfg, key):
@@ -809,6 +1120,29 @@ def generate_learning_report(
             )
         lines.append("")
 
+    # ── Killzone/session breakdown ───────────────────────────────────────
+    session_buckets: dict[str, list[dict]] = defaultdict(list)
+    for t in history:
+        session_buckets[t.get("killzone") or "None"].append(t)
+
+    if session_buckets:
+        lines += [
+            "## Performance by Killzone/Session",
+            "",
+            "| Session | Trades | Win% | Profit Factor |",
+            "|---------|--------|------|---------------|",
+        ]
+        for session_name in sorted(session_buckets.keys()):
+            bucket = session_buckets[session_name]
+            if len(bucket) < 2:
+                continue
+            sn_wr = _win_rate(bucket)
+            sn_pf = _profit_factor(bucket)
+            lines.append(
+                f"| {session_name} | {len(bucket)} | {sn_wr:.0f}% | {sn_pf} |"
+            )
+        lines.append("")
+
     report = "\n".join(lines)
     LEARNING_DIR.mkdir(exist_ok=True)
     REPORT_FILE.write_text(report, encoding="utf-8")
@@ -861,6 +1195,14 @@ def record_and_adapt(closed_trades: list, pair: str) -> dict:
     Convenience wrapper for main.py's run_iteration().
     Records new trades, re-analyses, adapts config, returns changes dict.
 
+    FIXED (Gypsi extension): the original trigger was
+    `len(history) % 20 == 0`, which can skip adaptation entirely when
+    multiple trades close in a single loop iteration and the count jumps
+    straight past a multiple of 20 (e.g. 18 -> 22). This now tracks the
+    count at last adaptation — persisted via adapt_config()'s own
+    "_total_trades_analysed" metadata, so it survives restarts — and uses
+    a `>=` threshold instead, so no batch of closes can slip through.
+
     Usage in main.py run_iteration():
         from adaptive_learner import record_and_adapt
         if closed:
@@ -872,8 +1214,8 @@ def record_and_adapt(closed_trades: list, pair: str) -> dict:
     record_session(closed_trades, pair)
     history = _load_history()
 
-    # Only re-run full analysis every 20 new trades to avoid thrashing config
-    if len(history) % 20 == 0:
+    last_analysed = _load_adapted().get("_total_trades_analysed", 0)
+    if len(history) - last_analysed >= 20:
         insights = analyse_mistakes()
         overlay  = adapt_config(insights)
         changes  = apply_adaptive_config()

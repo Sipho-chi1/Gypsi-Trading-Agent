@@ -16,7 +16,6 @@ class Settings:
     ALPACA_API_KEY: str = os.getenv("ALPACA_API_KEY", "")
     ALPACA_SECRET_KEY: str = os.getenv("ALPACA_SECRET_KEY", "")
     ALPACA_BASE_URL: str = os.getenv("ALPACA_BASE_URL", "https://paper-api.alpaca.markets")
-    ALPACA_MCP_URL: str = os.getenv("ALPACA_MCP_URL", "http://mcp:8080")
 
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
