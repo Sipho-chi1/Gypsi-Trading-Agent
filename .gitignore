@@ -7,3 +7,5 @@ node_modules/
 learning_data/
 backtest_results/
 .DS_Store
+
+.vercel
