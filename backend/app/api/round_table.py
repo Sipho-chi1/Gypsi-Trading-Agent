@@ -11,7 +11,7 @@ router = APIRouter()
 @router.get("/recent", response_model=list[RoundTableEntryOut])
 # query trades joined with their verdict/reasoning fields.
     
-async def recent_deliberations(limit: int = Query(default=20, ge=1, le=100),):
+async def recent_deliberations(limit: int =20):
     async with get_session() as session:
         result = await session.execute(
             text("""
