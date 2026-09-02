@@ -24,7 +24,7 @@ class RoundTableEntryOut(BaseModel):
     """One deliberation, for the live Round Table view — this endpoint is
     what the demo's best visual moment renders from."""
     symbol: str
-    proposal_reasoning: str
-    independent_reasoning: str
-    decision: str
+    proposal_reasoning: str | None
+    independent_reasoning: str | None
+    decision: Literal["approve", "downsize", "reject"]
     bias_flags: list[str]

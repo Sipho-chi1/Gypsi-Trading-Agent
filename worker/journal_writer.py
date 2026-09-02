@@ -11,15 +11,21 @@ from core.database import get_session
 
 
 async def log_trade(instrument, signal, verdict, contract, position) -> None:
+
+    independent_reasoning = None
+
+    if verdict.independent_reasoning is not None:
+        independent_reasoning = verdict.independent_read.reasoning
+
     async with get_session() as session:
         await session.execute(
             text("""
                 INSERT INTO trades
-                    (symbol, direction, entry, stop_loss, take_profit, reasoning,
+                    (symbol, direction, entry, stop_loss, take_profit, reasoning, independent_reasoning,
                      verdict_decision, verdict_reason, bias_flags, size_factor,
                      contract_expiry, contract_strike, quantity, status)
                 VALUES
-                    (:symbol, :direction, :entry, :stop_loss, :take_profit, :reasoning,
+                    (:symbol, :direction, :entry, :stop_loss, :take_profit, :reasoning, :independent_reasoning,
                      :verdict_decision, :verdict_reason, :bias_flags, :size_factor,
                      :contract_expiry, :contract_strike, :quantity, :status)
             """),
@@ -30,6 +36,7 @@ async def log_trade(instrument, signal, verdict, contract, position) -> None:
                 "stop_loss": signal.stop_loss,
                 "take_profit": signal.take_profit,
                 "reasoning": signal.reason,
+                "independent_reasoning": independent_reasoning,
                 "verdict_decision": verdict.decision,
                 "verdict_reason": verdict.reason,
                 "bias_flags": verdict.bias_flags,

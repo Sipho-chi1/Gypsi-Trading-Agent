@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS trades (
     stop_loss        NUMERIC,
     take_profit      NUMERIC,
     reasoning        TEXT,
+    independent_reasoning TEXT,
     verdict_decision TEXT NOT NULL,     -- approve | downsize | reject
     verdict_reason   TEXT,
     bias_flags       TEXT[],
