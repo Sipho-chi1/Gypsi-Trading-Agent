@@ -3,11 +3,16 @@ TODO: dedupe into a shared package once both services stabilise — kept
 separate for now so worker/ and backend/ can be deployed as independent
 Docker images without cross-importing each other."""
 from contextlib import asynccontextmanager
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 
 from core.settings import settings
 
-_engine = create_async_engine(settings.DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://"))
+_db_url = make_url(settings.DATABASE_URL)
+if _db_url.drivername in ("postgresql", "postgres"):
+    _db_url = _db_url.set(drivername="postgresql+asyncpg")
+
+_engine = create_async_engine(_db_url)
 
 
 @asynccontextmanager

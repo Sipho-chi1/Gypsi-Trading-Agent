@@ -1,0 +1,138 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+
+/* ============================================================
+   GYPSI THEME TOKENS
+   Two themes, same brand. CSS custom properties + data-theme
+   attribute on the app root (set by ThemeProvider). Dark default.
+   ============================================================ */
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-heading: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+
+  /* Semantic tokens — resolved per-theme via the vars below. */
+  --color-background: var(--gypsi-bg);
+  --color-surface: var(--gypsi-surface);
+  --color-raised: var(--gypsi-raised);
+  --color-border: var(--gypsi-border);
+  --color-accent: var(--gypsi-accent);
+  --color-accent-hover: var(--gypsi-accent-hover);
+  --color-on-accent: var(--gypsi-on-accent);
+  --color-foreground: var(--gypsi-fg);
+  --color-muted: var(--gypsi-muted);
+  --color-positive: var(--gypsi-positive);
+  --color-negative: var(--gypsi-negative);
+
+  --radius-card: 0.625rem;
+  --radius-pill: 999px;
+
+  --ease-gypsi: cubic-bezier(0.22, 1, 0.36, 1);
+
+  --animate-pulse-soft: pulse-soft 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  @keyframes pulse-soft {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.55; }
+  }
+}
+
+/* DARK — BLACK + YELLOW (default) */
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+  --gypsi-bg: #0a0a0b;
+  --gypsi-surface: #151517;
+  --gypsi-raised: #1e1e21;
+  --gypsi-border: #2a2a2e;
+  --gypsi-accent: #facc15;
+  --gypsi-accent-hover: #eab308;
+  --gypsi-on-accent: #0a0a0b;
+  --gypsi-fg: #f5f5f6;
+  --gypsi-muted: #8a8a93;
+  --gypsi-positive: #34d399;
+  --gypsi-negative: #f87171;
+}
+
+/* LIGHT — WHITE + BLUE */
+[data-theme="light"] {
+  color-scheme: light;
+  --gypsi-bg: #ffffff;
+  --gypsi-surface: #f6f8fb;
+  --gypsi-raised: #ffffff;
+  --gypsi-border: #e2e8f0;
+  --gypsi-accent: #2563eb;
+  --gypsi-accent-hover: #1d4ed8;
+  --gypsi-on-accent: #ffffff;
+  --gypsi-fg: #0f172a;
+  --gypsi-muted: #64748b;
+  --gypsi-positive: #059669;
+  --gypsi-negative: #dc2626;
+}
+
+@layer base {
+  * {
+    border-color: var(--gypsi-border);
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    background-color: var(--gypsi-bg);
+    color: var(--gypsi-fg);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Numeric/data fields use tabular numerals (PRD requirement). */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--gypsi-accent);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--gypsi-accent) 25%, transparent);
+    color: var(--gypsi-fg);
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--gypsi-border);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--gypsi-muted);
+    background-clip: content-box;
+    border: 2px solid transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

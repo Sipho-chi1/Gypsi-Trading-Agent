@@ -19,3 +19,19 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(trades.router, prefix="/trades", tags=["trades"])
 app.include_router(round_table.router, prefix="/round-table", tags=["round-table"])
+
+
+@app.get("/")
+async def root():
+    return {
+        "name": "Gypsi API",
+        "status": "running",
+        "docs_url": "/docs",
+        "endpoints": [
+            "/health",
+            "/trades",
+            "/trades/performance",
+            "/round-table/recent",
+        ],
+    }
+
