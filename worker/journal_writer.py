@@ -1,5 +1,5 @@
-"""
-Rewritten from forex_bot/journal_writer.py — writes to Postgres instead of
+﻿"""
+Rewritten from forex_bot/journal_writer.py â€” writes to Postgres instead of
 local JSON/markdown files, and now records the Round Table's verdict and
 bias flags alongside each trade, not just the price-action outcome. This
 extra context is what lets the adaptive learner measure the gate's own
@@ -12,6 +12,7 @@ from core.database import get_session
 
 async def log_trade(instrument, signal, verdict, contract, position) -> None:
     independent_reasoning = None
+
     if getattr(verdict, "independent_read", None) is not None:
         independent_reasoning = getattr(verdict.independent_read, "reasoning", None)
 
@@ -58,3 +59,4 @@ async def log_no_trade(instrument, reason: str) -> None:
             {"symbol": instrument.symbol, "reason": reason},
         )
         await session.commit()
+

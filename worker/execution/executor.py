@@ -49,6 +49,6 @@ def place_order(instrument, signal, contract, verdict, account_balance: float | 
     if qty == 0:
         return OpenPosition(instrument.symbol, 0, "none", contract, status="skipped_zero_size")
 
-    side = "buy" if signal.bias == "bullish" else "sell"
+    side = "buy" #if signal.bias == "bullish" else "sell"
     submit_option_order(contract, qty, side)
     return OpenPosition(instrument.symbol, qty, side, contract)

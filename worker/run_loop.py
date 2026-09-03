@@ -10,6 +10,7 @@ This is the ported/adapted equivalent of the original forex bot's main.py
 run_iteration(), generalised from a single forex pair to a watchlist of
 equities/ETFs and with the Round Table inserted between signal and execution.
 """
+import asyncio
 import time
 import logging
 
@@ -108,7 +109,7 @@ def fetch_portfolio_state(direction: str | None = None) -> PortfolioState:
     )
 
 
-def run_iteration(round_table, watchlist, account_balance: float) -> None:
+async def run_iteration(round_table, watchlist, account_balance: float) -> None:
     for instrument in watchlist:
         candles = fetch_multi_tf(instrument)
         if candles is None:
@@ -142,18 +143,18 @@ def run_iteration(round_table, watchlist, account_balance: float) -> None:
         ))
 
         if verdict.decision == "reject":
-            log_no_trade(instrument, verdict.reason)
+            await log_no_trade(instrument, verdict.reason)
             log.info(f"[{instrument.symbol}] REJECTED by Round Table: {verdict.reason}")
             continue
 
         # Stage 4 — Execution Agent
         contract = select_contract(instrument, signal, verdict)
         position = place_order(instrument, signal, contract, verdict)
-        log_trade(instrument, signal, verdict, contract, position)
+        await log_trade(instrument, signal, verdict, contract, position)
         log.info(f"[{instrument.symbol}] {verdict.decision.upper()} -> order placed: {position}")
 
 
-def main() -> None:
+async def main() -> None:
     round_table = build_round_table()
     watchlist = load_watchlist(settings.WATCHLIST)
 
@@ -161,11 +162,11 @@ def main() -> None:
     while True:
         account_balance = get_live_equity()
         try:
-            run_iteration(round_table, watchlist, account_balance)
+            await run_iteration(round_table, watchlist, account_balance)
         except Exception:
             log.exception("iteration failed, continuing loop")
-        time.sleep(settings.POLL_INTERVAL_SECONDS)
+        await asyncio.sleep(settings.POLL_INTERVAL_SECONDS)
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
