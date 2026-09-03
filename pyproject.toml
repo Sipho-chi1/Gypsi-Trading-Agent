@@ -1,2 +1,8 @@
-﻿[tool.vercel]
+﻿@'
+[project]
+name = "gypsi-trading-agent"
+version = "0.1.0"
+
+[tool.vercel]
 entrypoint = "backend.app.main:app"
+'@ | Set-Content -Path pyproject.toml -Encoding ascii
