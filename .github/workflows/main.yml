@@ -195,20 +195,6 @@ jobs:
     needs: packaging
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
 
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_PASSWORD: testpass
-          POSTGRES_DB: wes_codies_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
     steps:
       - uses: actions/checkout@v4
 
@@ -219,18 +205,23 @@ jobs:
           docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_WORKER }}:${{ github.sha }}
           # docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_FRONTEND }}:${{ github.sha }}  # commented out
 
-      - name: Start the full stack with docker-compose
+      - name: Start the full stack with docker compose
         run: |
           export BACKEND_IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_NAME_BACKEND }}:${{ github.sha }}
           export WORKER_IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_NAME_WORKER }}:${{ github.sha }}
           export FRONTEND_IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_NAME_FRONTEND }}:${{ github.sha }}
-          docker-compose -f docker-compose.ci.yml up -d --no-build
+          docker compose -f docker-compose.ci.yml up -d --no-build
 
       - name: Wait for services to be healthy
         run: |
           sleep 10
           curl --fail --retry 10 --retry-delay 5 http://localhost:8000/health
           # Check worker health if you expose one
+
+      - name: Initialize database schema
+        run: |
+          pip install asyncpg
+          python backend/init_db.py
 
       - name: Run acceptance test suite
         run: |
@@ -240,7 +231,7 @@ jobs:
 
       - name: Print logs on failure
         if: failure()
-        run: docker-compose -f docker-compose.ci.yml logs
+        run: docker compose -f docker-compose.ci.yml logs
 
   # ======================================================================
   # STAGE 5: RELEASE (Deploy to Railway/Vercel)

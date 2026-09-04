@@ -1,0 +1,50 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - gypsi_ci_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  api:
+    image: ${BACKEND_IMAGE:-gypsi-backend:local}
+    environment:
+      - DATABASE_URL=postgresql://gypsi:gypsi@postgres:5432/gypsi
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+
+  worker:
+    image: ${WORKER_IMAGE:-gypsi-worker:local}
+    environment:
+      - DATABASE_URL=postgresql://gypsi:gypsi@postgres:5432/gypsi
+      - ALPACA_BASE_URL=https://paper-api.alpaca.markets
+      - POLL_INTERVAL_SECONDS=300
+      - WATCHLIST=SPY,QQQ,AAPL,MSFT,NVDA
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "alpaca", "doctor"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  gypsi_ci_pgdata:
