@@ -116,6 +116,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: unit-tests
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
 
@@ -128,6 +131,16 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Docker/GHCR image names must be all-lowercase, but github.repository
+      # (used above to build IMAGE_NAME_BACKEND/WORKER) preserves the repo's
+      # actual case (e.g. "Sipho-chi1/Gypsi-Trading-Agent-backend"), which
+      # buildx rejects. Overwrite the env vars with lowercased versions for
+      # the rest of this job only.
+      - name: Lowercase image names
+        run: |
+          echo "IMAGE_NAME_BACKEND=$(echo '${{ env.IMAGE_NAME_BACKEND }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+          echo "IMAGE_NAME_WORKER=$(echo '${{ env.IMAGE_NAME_WORKER }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
 
       # NOTE: these two steps stay as docker/build-push-action (not `make build`)
       # on purpose — the Makefile's build-backend/build-worker targets build
