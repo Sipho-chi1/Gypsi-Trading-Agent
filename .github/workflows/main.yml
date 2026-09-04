@@ -129,6 +129,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Docker/GHCR image names must be all-lowercase, but github.repository
+      # (used above to build IMAGE_NAME_BACKEND/WORKER) preserves the repo's
+      # actual case (e.g. "Sipho-chi1/Gypsi-Trading-Agent-backend"), which
+      # buildx rejects. Overwrite the env vars with lowercased versions for
+      # the rest of this job only.
+      - name: Lowercase image names
+        run: |
+          echo "IMAGE_NAME_BACKEND=$(echo '${{ env.IMAGE_NAME_BACKEND }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+          echo "IMAGE_NAME_WORKER=$(echo '${{ env.IMAGE_NAME_WORKER }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+
       # NOTE: these two steps stay as docker/build-push-action (not `make build`)
       # on purpose — the Makefile's build-backend/build-worker targets build
       # locally with plain `docker build` and don't push, tag with the commit
