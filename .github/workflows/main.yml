@@ -12,7 +12,7 @@ env:
   IMAGE_NAME_BACKEND: ${{ github.repository }}-backend
   IMAGE_NAME_WORKER: ${{ github.repository }}-worker
   # IMAGE_NAME_FRONTEND: ${{ github.repository }}-frontend  # commented out for now
-  
+
   # Global flag to enable/disable frontend jobs
   ENABLE_FRONTEND: false
 
@@ -37,17 +37,10 @@ jobs:
           python-version: '3.11'
       - name: Install backend dependencies
         if: matrix.component == 'backend'
-        run: |
-          cd backend
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pylint ruff  # linters
+        run: make install-backend
       - name: Lint backend
         if: matrix.component == 'backend'
-        run: |
-          cd backend
-          pylint --fail-under=8.0 **/*.py 2>/dev/null || true  # fail softly for now
-          ruff check . || true
+        run: make lint-backend
 
       # ---- Frontend Build (DISABLED) ----
       # Uncomment this block when ready
@@ -90,16 +83,10 @@ jobs:
           python-version: '3.11'
       - name: Install backend dependencies
         if: matrix.component == 'backend'
-        run: |
-          cd backend
-          pip install -r requirements.txt  # includes pytest, pytest-cov
+        run: make install-backend
       - name: Run pytest
         if: matrix.component == 'backend'
-        run: |
-          cd backend
-          mkdir -p tests/unit
-          touch tests/unit/__init__.py
-          pytest tests/unit --cov=. --cov-report=xml --cov-report=term || [ $? -eq 5]
+        run: make test-backend
 
       # ---- Frontend Tests (DISABLED) ----
       # Uncomment this block when ready
@@ -142,6 +129,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # NOTE: these two steps stay as docker/build-push-action (not `make build`)
+      # on purpose — the Makefile's build-backend/build-worker targets build
+      # locally with plain `docker build` and don't push, tag with the commit
+      # SHA, or use GHA's layer cache. That's the right split: `make build` is
+      # for a quick local sanity check, this is the real CI artifact build.
       - name: Build and push Backend image
         uses: docker/build-push-action@v5
         with:
@@ -189,7 +181,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: packaging
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
-    
+
     services:
       postgres:
         image: postgres:15
@@ -246,7 +238,7 @@ jobs:
     needs: acceptance
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment: production
-    
+
     steps:
       - uses: actions/checkout@v4
 
