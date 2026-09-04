@@ -1,6 +1,14 @@
 ﻿[project]
 name = "gypsi-trading-agent"
 version = "0.1.0"
+dependencies = [
+    "fastapi==0.115.*",
+    "uvicorn[standard]==0.32.*",
+    "sqlalchemy[asyncio]==2.*",
+    "asyncpg",
+    "pydantic==2.*",
+    "python-dotenv",
+]
 
 [tool.vercel]
 entrypoint = "backend.app.main:app"
