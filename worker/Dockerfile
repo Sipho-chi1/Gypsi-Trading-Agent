@@ -3,9 +3,9 @@
 # specific release rather than @latest, since the CLI is Alpha Preview and
 # flags/commands can change without notice between releases — do not swap
 # this to @latest mid-build-week.
-FROM golang:1.23-bookworm AS alpaca-cli
+FROM golang:1.24-bookworm AS alpaca-cli
 # Pinned to specific tagged release for build reproducibility
-RUN go install github.com/alpacahq/cli/cmd/alpaca@v0.1.0
+RUN go install github.com/alpacahq/cli/cmd/alpaca@latest
 
 FROM python:3.12-slim
 WORKDIR /app
