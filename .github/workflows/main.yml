@@ -198,15 +198,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Same fix as Stage 3: env vars set via $GITHUB_ENV in a previous job
-      # don't carry over to this job (fresh runner), and the top-level
-      # env: block still has github.repository's original case. Re-lowercase
-      # here too, or every pull/compose step below breaks on mixed-case repos.
-      - name: Lowercase image names
-        run: |
-          echo "IMAGE_NAME_BACKEND=$(echo '${{ env.IMAGE_NAME_BACKEND }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
-          echo "IMAGE_NAME_WORKER=$(echo '${{ env.IMAGE_NAME_WORKER }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
-
       - name: Pull built images from GHCR
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
