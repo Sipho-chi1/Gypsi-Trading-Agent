@@ -99,7 +99,6 @@ jobs:
           cd backend
           mkdir -p tests/unit
           touch tests/unit/__init__.py
-
           pytest tests/unit --cov=. --cov-report=xml --cov-report=term || [ $? -eq 5 ]
 
       # ---- Frontend Tests (DISABLED) ----
