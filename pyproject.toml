@@ -3,11 +3,11 @@ name = "gypsi-trading-agent"
 version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
-    "fastapi",
-    "uvicorn",
-    "sqlalchemy[asyncio]",
+    "fastapi==0.115.*",
+    "uvicorn[standard]==0.32.*",
+    "sqlalchemy[asyncio]==2.*",
     "asyncpg",
-    "pydantic>=2",
+    "pydantic==2.*",
     "python-dotenv",
 ]
 
