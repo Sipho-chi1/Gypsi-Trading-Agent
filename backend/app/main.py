@@ -1,6 +1,10 @@
 """FastAPI entrypoint — serves trade/verdict history to the Vercel-hosted
 Next.js dashboard. Never talks to Alpaca or the LLM providers directly;
 that's the worker's job. This service only reads from Postgres."""
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
